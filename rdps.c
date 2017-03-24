@@ -74,7 +74,7 @@ int FIN_FLAG = 0;
 
 
 int total_bytes_sent = 0;
-int 
+ 
 
 
 packet* packetList[MAX_WINDOW_SIZE];
@@ -501,11 +501,11 @@ int main(int argc, char*  argv[]) {
 			if(new_packet.ackno == closing_ack){
 
 				printf("END OF TRANSMISSION...\n");
+				fclose(fp);
+				close(sock);
 				exit(0);
-				
-			}
 			
-
+			}
 
 		}
 		//if a packet is timed out then it will be resent 
@@ -514,12 +514,10 @@ int main(int argc, char*  argv[]) {
 			fill_window(sock, dest_addr, dest_addr_size);
 		}
 		
-
-		//printf("window SIZE: %d\n", window_size);
-		//send the last fin when the window is empty
 		
 		int count = is_empty();
-
+		
+		//if fin flag is set then add timer to fin packet
 		if(FIN_FLAG = 1 && count == 0) {
 			printf("FIN FLAG SET\n");
 			struct timeval now;
