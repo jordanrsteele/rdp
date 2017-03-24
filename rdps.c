@@ -73,8 +73,18 @@ char* fileName;
 int FIN_FLAG = 0;
 
 
-int total_bytes_sent = 0;
- 
+int bytes_sent          = 0;
+int uniq_sent   	= 0;
+int packets_sent 	= 0;
+int uniq_packets_sent	= 0;
+int syn_sent	 	= 0;
+int fin_sent 	 	= 0;
+int rst_sent	 	= 0;
+int ack_received 	= 0;
+int rst_received 	= 0;
+
+
+struct timeval start, stop;
 
 
 packet* packetList[MAX_WINDOW_SIZE];
@@ -110,16 +120,26 @@ int packet_log(packet log_packet, char event) {
 int print_log() {
 
 	//http://stackoverflow.com/questions/2150291/how-do-i-measure-a-time-interval-in-c	
+	gettimeofday(&stop, NULL);
+	double elapsedTime = (stop.tv_sec - start.tv_sec)*1000.0;
+	elapsedTime += (stop.tv_usec - start.tv_usec) / 1000.0;
+	
 
-	printf("total data bytes sent: 		%d\n", seqno);	
-	printf("unique data bytes sent: 	%d\n", seqno);
-	printf("total data packets sent:	%d\n", seqno);
-	printf("unique data packets sent: 	%d\n", seqno);
-	printf("SYN packets sent: 		%d\n", seqno);
-	printf("FIN packets sent: 		%d\n", seqno);
-	printf("RST packets sent: 		%d\n", seqno);
-	printf("ACK packets received: 		%d\n", seqno);
-	printf("RST packets received: 		%d\n", seqno);
+	bytes_sent += seqno;
+	uniq_sent = seqno;
+	packets_sent += uniq_packets_sent;
+
+	printf("total data bytes sent: 		%d\n", bytes_sent);	
+	printf("unique data bytes sent: 	%d\n", uniq_sent);
+	printf("total data packets sent:	%d\n", packets_sent);
+	printf("unique data packets sent: 	%d\n", uniq_packets_sent);
+	printf("SYN packets sent: 		%d\n", syn_sent);
+	printf("FIN packets sent: 		%d\n", fin_sent);
+	printf("RST packets sent: 		%d\n", rst_sent);
+	printf("ACK packets received: 		%d\n", ack_received);
+	printf("RST packets received: 		%d\n", rst_received);
+	printf("Total time duration (seconds):  %lf\n",elapsedTime/1000.0);
+
 
 }
 
@@ -144,12 +164,15 @@ void resend(packet* pack) {
 	memcpy(buffer, pack, sizeof(struct packet));		
 	sendto(sock, buffer, BUFFER_SIZE, 0, (struct sockaddr*)&dest_addr, dest_addr_size);
 	
+
 	packet new_pack;
 	memset(&new_pack, '\0', sizeof(struct packet));
 	memcpy(&new_pack, pack, sizeof(struct packet));
 
+	//for logging info
 	packet_log(new_pack, 'S');
-	
+	bytes_sent += pack->length;
+	packets_sent++;
 	free(buffer);
 	//return 0;
 }
@@ -241,10 +264,10 @@ int fill_window(int sock, struct sockaddr_in dest_addr, socklen_t dest_addr_size
 	packet data_packet;
 
 	while(window_size > 0) {
-
+		
 		memset(&data_packet, '\0', sizeof(struct packet));
 		//load contents
-		//timer for packet
+
 		struct timeval now;
 		struct timeval adder;
 		struct timeval timeout;
@@ -279,7 +302,7 @@ int fill_window(int sock, struct sockaddr_in dest_addr, socklen_t dest_addr_size
 			FIN_FLAG = 1;
 			//push_fin(timeout);
 		}
-		
+		uniq_packets_sent++;
 		free(buffer);
 		window_size--;
 	}
@@ -317,7 +340,7 @@ int push_fin(struct timeval time) {
 	free(buffer);
 
 	closing_ack = seqno;
-
+	fin_sent++;
 	return 0;
 }
 
@@ -347,13 +370,47 @@ int push_syn(int socket, struct sockaddr_in dest_addr1, socklen_t dest_addr_size
 	sendto(socket, buff, BUFFER_SIZE, 0, (struct sockaddr*)&dest_addr1, dest_addr_size1);
 	packet_log(syn_packet, 's');	
 	free(buff);
+	syn_sent++;
 	return seqno;
+}
+
+int push_rst(int socket, struct sockaddr_in dest_addr, socklen_t dest_addr_size) {
+
+	char magicString[] = "CSC361";
+	char newLine[] = "\n";
+	char data[] = "THIS IS THE DATA SECTION of syn packet";
+    	//create a new packet
+	
+	packet rst_packet;
+	
+	//load contents
+	
+	memcpy(&rst_packet.magic, magicString, strlen(magicString));
+	rst_packet.type         = ACK;
+	rst_packet.seqno        = 0;
+	rst_packet.ackno        = seqno;
+	rst_packet.length       = 0;
+	rst_packet.size         = 0;
+	memcpy(&rst_packet.blank, newLine, strlen(newLine));
+	memcpy(&rst_packet.data, data, strlen(data));
+
+	char* buffer = malloc(sizeof(struct packet));
+	memcpy(buffer, &rst_packet, sizeof(rst_packet));
+	packet_log(rst_packet, 's');
+	sendto(sock, buffer, BUFFER_SIZE, 0, (struct sockaddr*)&dest_addr, dest_addr_size);
+	
+	
+	return 0;
+
+
 }
 
 
 //SENDER CODE
 int main(int argc, char*  argv[]) {
-
+	
+	//start program clock
+	gettimeofday(&start, NULL);
 	
 	time_t t;
     	time(&t);
@@ -439,7 +496,7 @@ int main(int argc, char*  argv[]) {
 	fd_set readset;
 	struct timeval tv;
 	tv.tv_sec = 0;
-	tv.tv_usec = 30000;
+	tv.tv_usec = TIME_OUT;
 
 	packet new_packet;
 	while(1) {
@@ -490,18 +547,30 @@ int main(int argc, char*  argv[]) {
 			packet_log(new_packet, 'r');
 			if(new_packet.type == ACK) {
 				//update_list
+				ack_received++;
 				update_list(new_packet.ackno);									
 			}
 			
 			//keep checking for closing ackno
 			if(new_packet.ackno == closing_ack){
-
 				printf("END OF TRANSMISSION...\n");
-				fclose(fp);
+				print_log();
+				exit(0);
+				
+			}
+
+			if(new_packet.type == RST) {
+				rst_received++;
+				print_log();
+				exit(0);
+			}	
+			
+			if(FIN_FLAG == 1 && new_packet.type == SYN) {
+				push_rst(sock, dest_addr, dest_addr_size);
 				close(sock);
 				exit(0);
-			
 			}
+
 
 		}
 		//if a packet is timed out then it will be resent 
@@ -511,10 +580,8 @@ int main(int argc, char*  argv[]) {
 		}
 		
 		
-		int count = is_empty();
-		
-		//if fin flag is set then add timer to fin packet
-		if(FIN_FLAG = 1 && count == 0) {
+		//int count = is_empty();
+		if(FIN_FLAG = 1 && is_empty() == 0) {
 			printf("FIN FLAG SET\n");
 			struct timeval now;
 			struct timeval adder;
