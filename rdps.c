@@ -111,8 +111,6 @@ int print_log() {
 
 	//http://stackoverflow.com/questions/2150291/how-do-i-measure-a-time-interval-in-c	
 
-
-
 	printf("total data bytes sent: 		%d\n", seqno);	
 	printf("unique data bytes sent: 	%d\n", seqno);
 	printf("total data packets sent:	%d\n", seqno);
@@ -122,8 +120,6 @@ int print_log() {
 	printf("RST packets sent: 		%d\n", seqno);
 	printf("ACK packets received: 		%d\n", seqno);
 	printf("RST packets received: 		%d\n", seqno);
-		
-
 
 }
 
@@ -248,7 +244,7 @@ int fill_window(int sock, struct sockaddr_in dest_addr, socklen_t dest_addr_size
 
 		memset(&data_packet, '\0', sizeof(struct packet));
 		//load contents
-
+		//timer for packet
 		struct timeval now;
 		struct timeval adder;
 		struct timeval timeout;
